@@ -1,110 +1,86 @@
-import CPUtables as cpu
+# Feito em conjunto pelos alunos:
+# Bruno Pavan Ciriani da Silva - 12011ECP012
+# Leonardo Vecchi Meirelles - 12011ECP002
+# Lucas Humberto Jesus de Lima - 12011ECP011
 
-'''
-ainda a fazer:
-testar, refatorar
+from CPUtables import *
 
-'''
+file = input("Nome do arquivo ASM: ")
 
-nextVariable = 16
-variables = \
-{
-    "R0":"0",
-    "R1":"1",
-    "R2":"2",
-    "R3":"3",
-    "R4":"4",
-    "R5":"5",
-    "R6":"6",
-    "R7":"7",
-    "R8":"8",
-    "R9":"9",
-    "R10":"10",
-    "R11":"11",
-    "R12":"12",
-    "R13":"13",
-    "R14":"14",
-    "R15":"15",
-    "SCREEN":"16384",
-    "KBD":"24576",
-    "SP":"0",
-    "LCL":"1",
-    "ARG":"2",
-    "THIS":"3",
-    "THAT":"4"
-}
+with open(file, "r") as f:
+    lines = [l.split("//")[0].strip().replace(" ", "") \
+             for l in f.readlines() \
+             if l.strip() and not l.startswith("//")]
 
+lines = list(filter(None, lines))
 
-def saveLabels(vector):
-    length = len(vector)
-    lineNumber = 0
-    while lineNumber <= length:
-        line = vector[lineNumber]
-        if line.startswith("("):
-            variables[line[1:-1]] = lineNumber
-            vector.remove(line)
-            length = len(vector)
-        
-        lineNumber += 1
-    return variables
+#print(lines)
 
+codasm = list()
+line_count = 0
+label_symbols = {}
+variable_symbols = {}
+next_variable_address = 16
 
-def convertTypeC(command):
-    if command.isdigit():
-        return f"0{int(command): 016b}\n".replace(" ", "")
-    if command in variables:
-        temp = int(variables[command])
-        return f"0{int(temp): 016b}\n".replace(" ", "")
-    variables[command] = nextVariable
-    nextVariable +=1
-    temp = int(variables[command])
-    return f"0{int(temp): 016b}\n".replace(" ", "")
-
-def convertTypeA(command):
-    ddd, restOfCommand = command.split("=") if "=" in command else ["",command]   
-    acccccc = restOfCommand.split(";")[0] if ";" in command else restOfCommand
-    jjj = restOfCommand.split(";")[1] if ";" in command else ""
-    cmd = f"111{cpu.comp(acccccc)}{cpu.dest(ddd)}{cpu.jump(jjj)}\n".replace(" ","")
-    return cmd
-
-
-def conertToBinary(command):
-    if command.startswith("@"):
-        return convertTypeC(command[1:])
+# Finding lables
+for l in lines:
+    if l.startswith("(") and l.endswith(")"):
+        # Found a label line, extract the label and assign the line count as its value
+        label = l[1:-1]
+        label_symbols[label] = line_count
     else:
-        return convertTypeA(command)        
+        # Increment line count for non-label lines
+        line_count += 1
 
+line_count = 0
+for l in lines:
+    # A-instruction @n (15bits > 0) or symbol (variable, predefined or label)
+    # Can't count lines that initializes lables '(label)'
+    if not l.startswith("(") and not l.endswith(")"):
+        if(l.startswith("@")):
+            symbol = (l[1:])
+            # If it's a digit, it's an integer. Ex. @12
+            if symbol.isdigit():
+                n = int(symbol)
+                codasm.append(f"0{n:015b}")
+            # Else, it starts with some kind of letter, that could be a label, a variable or a predefined symbol.
+            else:
+                # If it's a symbol in the label list created above (while finding lables).
+                # The label value is the line that it was initialized.
+                # The code for finding the labels already set the value of each label. 
+                if symbol in label_symbols:
+                    label_value = label_symbols[symbol]
+                    codasm.append(f"0{label_value:015b}")
+                # If it's a variable, the value is the next variable address, starting in 16;
+                # The counter for this variable is incremented after because of the way I made the code.
+                # The lists of labels and variables are on the main program, but the others are dictionaries in another file.
+                elif symbol in variable_symbols:
+                    variable_value = variable_symbols[symbol]
+                    codasm.append(f"0{variable_value:015b}")
+                else:
+                    # It verifies if the symbol is part of the set of predefined symbols.
+                    symbol_value = tPreSymbols(symbol)
+                    if symbol_value is not None:
+                        codasm.append(f"0{symbol_value:015b}")
+                    else:
+                        # If it's not, it means that is a variable being accessed for at least the second time.
+                        # Of course it will not be in the predefined table and the value is already set.
+                        # The next variable address is finally incremented.
+                        variable_symbols[symbol] = next_variable_address
+                        codasm.append(f"0{next_variable_address:015b}")
+                        next_variable_address += 1
 
-def openFile(file):
-    
-    with open(file, "r") as f:
-        lines = list(l.split("//")[0].replace(" ","") \
-        for l in f.readlines() \
-        if l.replace(" ","") and not l.startswith("//"))
-    return lines
+        # C-instruction 111accccccdddjjj dest=comp; jump
+        # If it has "=" or ";" it has to be a C-instruction
+        elif "=" or ";" in l:
+            ddd, aux = l.split("=") if "=" in l else ("",l)
+            acccccc, jjj = aux.split(";") if ";" in aux else (aux,"")
+            codasm.append(f"111{tcomp(acccccc)}{tdest(ddd)}{tjump(jjj)}")
+        # After all, the line count is incremented
+        line_count += 1
 
-def assembler(fileName):
-    bin = []
-    try: 
-        lines = openFile(file)
-    except:
-        print("Unable to open file")
+#print(codasm)
 
-    saveLabels(lines)
-
-    for line in lines:
-        try:
-            bin.append(conertToBinary(line))
-        except:
-            print("not able to convert instruction:" + line)
-            
-    with open(file.split(".")[0] + ".bin", "w") as f:
-        f.writelines(bin)
-
-
-if __name__ == "__main__":
-    file = input("nome do arquivo asm:\t")
-    try:
-        assembler(file)
-    except:
-        print("not possible")
+with open(file.split('.')[0]+".bin", "w") as f:
+    for c in codasm:
+        f.write(c+"\n")
